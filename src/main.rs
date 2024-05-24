@@ -418,9 +418,7 @@ impl GfxHeaders {
 		str_slice.to_string_lossy().into_owned()
 	}
 
-	fn write_igrab_header(&self, f: &mut dyn std::io::Write) -> std::io::Result<()> {
-		let igrab_version = IGrabVersion::ZeroPointTwoFour;
-
+	fn write_igrab_header(&self, f: &mut dyn std::io::Write, igrab_version : IGrabVersion) -> std::io::Result<()> {
 		writeln!(f, "//////////////////////////////////////")?;
 		writeln!(f, "//")?;
 		if let Some(ext) = &self.extension {
@@ -562,14 +560,12 @@ impl GfxHeaders {
 		Ok(())
 	}
 
-	fn save_igrab_header(&self, filename: &str) -> std::io::Result<()> {
+	fn save_igrab_header(&self, filename: &str, igrab_version : IGrabVersion) -> std::io::Result<()> {
 		let igrab_file = std::fs::File::create(filename)?;
 		let mut igrab_writer = std::io::BufWriter::new(igrab_file);
-		self.write_igrab_header(&mut igrab_writer)
+		self.write_igrab_header(&mut igrab_writer, igrab_version)
 	}
-	fn write_igrab_asm_header(&self, f: &mut dyn std::io::Write) -> std::io::Result<()> {
-		let igrab_version = IGrabVersion::ZeroPointTwoFour;
-
+	fn write_igrab_asm_header(&self, f: &mut dyn std::io::Write, igrab_version : IGrabVersion) -> std::io::Result<()> {
 		writeln!(f, ";=====================================")?;
 		writeln!(f, ";")?;
 		if let Some(ext) = &self.extension {
@@ -618,7 +614,7 @@ impl GfxHeaders {
 						)?;
 					}
 					MiscChunk::Demo(num) => {
-						writeln!(f, "DEMO{}  \t=\t{},", num, chunk_id)?;
+						writeln!(f, "DEMO{}  \t=\t{}", num, chunk_id)?;
 					}
 				}
 				chunk_id += 1;
@@ -673,10 +669,10 @@ impl GfxHeaders {
 		Ok(())
 	}
 
-	fn save_igrab_asm_header(&self, filename: &str) -> std::io::Result<()> {
+	fn save_igrab_asm_header(&self, filename: &str, igrab_version : IGrabVersion) -> std::io::Result<()> {
 		let igrab_file = std::fs::File::create(filename)?;
 		let mut igrab_writer = std::io::BufWriter::new(igrab_file);
-		self.write_igrab_asm_header(&mut igrab_writer)
+		self.write_igrab_asm_header(&mut igrab_writer, igrab_version)
 	}
 
 	fn write_omnispeak_cfg(&self, f: &mut dyn std::io::Write) -> std::io::Result<()> {
@@ -1106,6 +1102,8 @@ fn show_usage() {
 	println!("\t\tCreates a GRAPHEXT/GFXE_EXT C header file.");
 	println!("\t--igrab-asm <filename>");
 	println!("\t\tCreates a GRAPHEXT/GFXE_EXT assembly (.EQU) header.");
+	println!("\t--igrab-version <0.24 | 0.4>");
+	println!("\t\tEmulate the output from a specific IGRAB version.");
 }
 
 fn main() {
@@ -1118,6 +1116,9 @@ fn main() {
 	let headers = parse_gfx_script(script_filename).unwrap();
 
 	let mut arg_iter = args.iter().skip(2);
+
+	/* We default to 0.4 for igrab output. */
+	let mut igrab_version = IGrabVersion::ZeroPointFour;
 
 	while let Some(arg) = arg_iter.next() {
 		match arg.as_str() {
@@ -1133,13 +1134,21 @@ fn main() {
 				let filename = arg_iter.next().unwrap().as_str();
 				headers.save_omnispeak_cfg(filename).unwrap();
 			}
+			"--igrab-version" => {
+				let ver_str = arg_iter.next().unwrap().as_str();
+				igrab_version = match ver_str {
+					"0.24" => IGrabVersion::ZeroPointTwoFour,
+					"0.4" => IGrabVersion::ZeroPointFour,
+					_ => panic!("Invalid IGRAB version. Only 0.24 and 0.4 are supported!"),
+				};
+			}
 			"--igrab-header" => {
 				let filename = arg_iter.next().unwrap().as_str();
-				headers.save_igrab_header(filename).unwrap();
+				headers.save_igrab_header(filename, igrab_version).unwrap();
 			}
 			"--igrab-asm" => {
 				let filename = arg_iter.next().unwrap().as_str();
-				headers.save_igrab_asm_header(filename).unwrap();
+				headers.save_igrab_asm_header(filename, igrab_version).unwrap();
 			}
 			_ => {
 				show_usage();
