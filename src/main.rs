@@ -409,10 +409,10 @@ impl GfxHeaders {
 	#[cfg(feature = "timestamps")]
 	fn timestamp() -> String {
 		// From man ctime_r: "stores the string in a user-supplied buffer which should have room for at least 26 bytes"
-		let mut buf = vec![0; 26];
+		let mut buf = vec![0u8; 26];
 
 		let time = unsafe { libc::time(std::ptr::null_mut()) };
-		unsafe { libc::ctime_r(&time, buf.as_mut_ptr()) };
+		unsafe { libc::ctime_r(&time, buf.as_mut_ptr() as *mut std::ffi::c_char) };
 		let str_slice = std::ffi::CStr::from_bytes_until_nul(&buf).unwrap();
 
 		str_slice.to_string_lossy().into_owned()
