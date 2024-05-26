@@ -29,9 +29,10 @@ mod parser;
 // The tab width used in outputting IGRAB files. Mostly used by 0.24
 const IGRAB_TAB_WIDTH: usize = 8;
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(Default, PartialEq, Clone, Copy)]
 enum IGrabVersion {
 	ZeroPointTwoFour,
+	#[default]
 	ZeroPointFour,
 }
 
@@ -44,21 +45,44 @@ impl std::fmt::Display for IGrabVersion {
 	}
 }
 
-impl IGrabVersion {
+#[derive(Default)]
+struct IGrabOptions {
+	version: IGrabVersion,
+	append_underscores: bool,
+}
+
+impl IGrabOptions {
 	fn write_chunk_line(
-		self,
+		&self,
 		f: &mut dyn std::io::Write,
 		chunk_name: &str,
-		chunk_suffix: &str,
+		chunk_suffix: Option<&str>,
 		chunk_num: u32,
 		first: bool,
 	) -> std::io::Result<()> {
-		match self {
+		match self.version {
 			IGrabVersion::ZeroPointTwoFour => {
-				let num_chars = 8 + chunk_name.len() + chunk_suffix.len();
+				let num_chars = 8
+					+ chunk_name.len() + if self.append_underscores
+					&& chunk_suffix != None
+				{
+					1
+				} else {
+					0
+				} + if chunk_suffix != None {
+					chunk_suffix.unwrap().len()
+				} else {
+					0
+				};
 				let desired_column = 41; /* "#define ".len() */
 				let num_tabs = (desired_column - num_chars) / IGRAB_TAB_WIDTH;
-				write!(f, "#define {}{}", chunk_name, chunk_suffix)?;
+				write!(f, "#define {}", chunk_name)?;
+				if self.append_underscores && chunk_suffix != None {
+					write!(f, "_")?;
+				}
+				if chunk_suffix != None {
+					write!(f, "{}", chunk_suffix.unwrap())?;
+				}
 				for _ in 0..num_tabs {
 					write!(f, "\t")?;
 				}
@@ -68,14 +92,41 @@ impl IGrabVersion {
 				if first {
 					writeln!(
 						f,
-						"\t\t{}{} = {},",
-						chunk_name, chunk_suffix, chunk_num
+						"\t\t{}{}{} = {},",
+						chunk_name,
+						if self.append_underscores && chunk_suffix != None {
+							"_"
+						} else {
+							""
+						},
+						chunk_suffix.unwrap_or(""),
+						chunk_num
 					)
 				} else {
-					let num_chars = chunk_name.len() + chunk_suffix.len() + 1; // ','
+					let num_chars = chunk_name.len()
+						+ if self.append_underscores && chunk_suffix != None
+						{
+							1
+						} else {
+							0
+						} + if chunk_suffix != None {
+						chunk_suffix.unwrap().len()
+					} else {
+						0
+					} + 1; // ','
 					let desired_column = 32 + 5; /* NAMELEN + 5 */
 					let num_spaces = desired_column - num_chars;
-					write!(f, "\t\t{}{},", chunk_name, chunk_suffix)?;
+					write!(
+						f,
+						"\t\t{}{}{},",
+						chunk_name,
+						if self.append_underscores && chunk_suffix != None {
+							"_"
+						} else {
+							""
+						},
+						chunk_suffix.unwrap_or("")
+					)?;
 					for _ in 0..num_spaces {
 						write!(f, " ")?;
 					}
@@ -86,16 +137,27 @@ impl IGrabVersion {
 	}
 
 	fn write_asm_chunk_line(
-		self,
+		&self,
 		f: &mut dyn std::io::Write,
 		chunk_name: &str,
-		chunk_suffix: &str,
+		chunk_suffix: Option<&str>,
 		chunk_num: u32,
 	) -> std::io::Result<()> {
-		let num_chars = chunk_name.len() + chunk_suffix.len();
+		let num_chars = chunk_name.len()
+			+ if chunk_suffix != None {
+				chunk_suffix.unwrap().len() + if self.append_underscores { 1 } else { 0 }
+			} else {
+				0
+			};
 		let desired_column = 33;
 		let num_tabs = (desired_column - num_chars + IGRAB_TAB_WIDTH - 2) / IGRAB_TAB_WIDTH;
-		write!(f, "{}{}", chunk_name, chunk_suffix)?;
+		write!(
+			f,
+			"{}{}{}",
+			chunk_name,
+			if self.append_underscores && chunk_suffix != None { "_" } else { "" },
+			chunk_suffix.unwrap_or("")
+		)?;
 		for _ in 0..num_tabs {
 			write!(f, "\t")?;
 		}
@@ -418,7 +480,11 @@ impl GfxHeaders {
 		str_slice.to_string_lossy().into_owned()
 	}
 
-	fn write_igrab_header(&self, f: &mut dyn std::io::Write, igrab_version : IGrabVersion) -> std::io::Result<()> {
+	fn write_igrab_header(
+		&self,
+		f: &mut dyn std::io::Write,
+		igrab_options: &IGrabOptions,
+	) -> std::io::Result<()> {
 		writeln!(f, "//////////////////////////////////////")?;
 		writeln!(f, "//")?;
 		if let Some(ext) = &self.extension {
@@ -426,24 +492,24 @@ impl GfxHeaders {
 		}
 		#[cfg(feature = "timestamps")]
 		write!(f, "// idGrab-ed on {}", GfxHeaders::timestamp())?;
-		writeln!(f, "// idGrab emulating IGRAB {}", igrab_version)?;
+		writeln!(f, "// idGrab emulating IGRAB {}", igrab_options.version)?;
 		writeln!(f, "//")?;
 		writeln!(f, "//////////////////////////////////////\n")?;
 
 		let mut chunk_id = self.bitmaps_start();
 
 		/* If the IGRAB version is 0.24, we use defines. Otherwise, we use an enum. */
-		if igrab_version == IGrabVersion::ZeroPointFour {
+		if igrab_options.version == IGrabVersion::ZeroPointFour {
 			writeln!(f, "typedef enum {{")?;
 		}
 
 		/* Fonts are not included, nor masked fonts. */
 
 		for pic in &self.bitmaps {
-			igrab_version.write_chunk_line(
+			igrab_options.write_chunk_line(
 				f,
 				pic,
-				"PIC",
+				Some("PIC"),
 				chunk_id,
 				chunk_id == self.bitmaps_start(),
 			)?;
@@ -453,10 +519,10 @@ impl GfxHeaders {
 		writeln!(f, "")?;
 
 		for picm in &self.bitmaps_masked {
-			igrab_version.write_chunk_line(
+			igrab_options.write_chunk_line(
 				f,
 				picm,
-				"PICM",
+				Some("PICM"),
 				chunk_id,
 				chunk_id == self.bitmaps_masked_start(),
 			)?;
@@ -466,17 +532,17 @@ impl GfxHeaders {
 		writeln!(f, "")?;
 
 		for sprite in &self.sprites {
-			igrab_version.write_chunk_line(
+			igrab_options.write_chunk_line(
 				f,
 				sprite,
-				"SPR",
+				Some("SPR"),
 				chunk_id,
 				chunk_id == self.sprites_start(),
 			)?;
 			chunk_id += 1;
 		}
 
-		if igrab_version == IGrabVersion::ZeroPointFour {
+		if igrab_options.version == IGrabVersion::ZeroPointFour {
 			//writeln!(f, "\n// Misc chunks (externs)")?;
 			chunk_id = self.misc_start();
 			for misc in &self.misc_chunks {
@@ -485,12 +551,14 @@ impl GfxHeaders {
 					| MiscChunk::B8000Text(name)
 					| MiscChunk::Article(name)
 					| MiscChunk::Terminator(name) => {
-						igrab_version.write_chunk_line(
-							f, name, "", chunk_id, true,
+						igrab_options.write_chunk_line(
+							f, name, None, chunk_id, true,
 						)?;
 					}
 					MiscChunk::Demo(num) => {
-						if igrab_version == IGrabVersion::ZeroPointFour {
+						if igrab_options.version
+							== IGrabVersion::ZeroPointFour
+						{
 							writeln!(
 								f,
 								"\t\tDEMO{}={},",
@@ -508,7 +576,7 @@ impl GfxHeaders {
 				chunk_id += 1;
 			}
 		}
-		if igrab_version == IGrabVersion::ZeroPointFour {
+		if igrab_options.version == IGrabVersion::ZeroPointFour {
 			writeln!(f, "\t\tENUMEND\n\t     }} graphicnums;\n")?;
 		}
 
@@ -560,12 +628,20 @@ impl GfxHeaders {
 		Ok(())
 	}
 
-	fn save_igrab_header(&self, filename: &str, igrab_version : IGrabVersion) -> std::io::Result<()> {
+	fn save_igrab_header(
+		&self,
+		filename: &str,
+		igrab_options: &IGrabOptions,
+	) -> std::io::Result<()> {
 		let igrab_file = std::fs::File::create(filename)?;
 		let mut igrab_writer = std::io::BufWriter::new(igrab_file);
-		self.write_igrab_header(&mut igrab_writer, igrab_version)
+		self.write_igrab_header(&mut igrab_writer, igrab_options)
 	}
-	fn write_igrab_asm_header(&self, f: &mut dyn std::io::Write, igrab_version : IGrabVersion) -> std::io::Result<()> {
+	fn write_igrab_asm_header(
+		&self,
+		f: &mut dyn std::io::Write,
+		igrab_options: &IGrabOptions,
+	) -> std::io::Result<()> {
 		writeln!(f, ";=====================================")?;
 		writeln!(f, ";")?;
 		if let Some(ext) = &self.extension {
@@ -573,7 +649,7 @@ impl GfxHeaders {
 		}
 		#[cfg(feature = "timestamps")]
 		write!(f, "; idGrab-ed on {}", GfxHeaders::timestamp())?;
-		writeln!(f, "; idGrab emulating IGRAB {}", igrab_version)?;
+		writeln!(f, "; idGrab emulating IGRAB {}", igrab_options.version)?;
 		writeln!(f, ";")?;
 		writeln!(f, ";=====================================\n")?;
 
@@ -582,25 +658,25 @@ impl GfxHeaders {
 		/* Fonts are not included, nor masked fonts. */
 
 		for pic in &self.bitmaps {
-			igrab_version.write_asm_chunk_line(f, pic, "PIC", chunk_id)?;
+			igrab_options.write_asm_chunk_line(f, pic, Some("PIC"), chunk_id)?;
 			chunk_id += 1;
 		}
 
 		writeln!(f, "")?;
 
 		for picm in &self.bitmaps_masked {
-			igrab_version.write_asm_chunk_line(f, picm, "PICM", chunk_id)?;
+			igrab_options.write_asm_chunk_line(f, picm, Some("PICM"), chunk_id)?;
 			chunk_id += 1;
 		}
 
 		writeln!(f, "")?;
 
 		for sprite in &self.sprites {
-			igrab_version.write_asm_chunk_line(f, sprite, "SPR", chunk_id)?;
+			igrab_options.write_asm_chunk_line(f, sprite, Some("SPR"), chunk_id)?;
 			chunk_id += 1;
 		}
 
-		if igrab_version == IGrabVersion::ZeroPointFour {
+		if igrab_options.version == IGrabVersion::ZeroPointFour {
 			//writeln!(f, "\n// Misc chunks (externs)")?;
 			chunk_id = self.misc_start();
 			for misc in &self.misc_chunks {
@@ -609,8 +685,8 @@ impl GfxHeaders {
 					| MiscChunk::B8000Text(name)
 					| MiscChunk::Article(name)
 					| MiscChunk::Terminator(name) => {
-						igrab_version.write_asm_chunk_line(
-							f, name, "", chunk_id,
+						igrab_options.write_asm_chunk_line(
+							f, name, None, chunk_id,
 						)?;
 					}
 					MiscChunk::Demo(num) => {
@@ -669,10 +745,14 @@ impl GfxHeaders {
 		Ok(())
 	}
 
-	fn save_igrab_asm_header(&self, filename: &str, igrab_version : IGrabVersion) -> std::io::Result<()> {
+	fn save_igrab_asm_header(
+		&self,
+		filename: &str,
+		igrab_options: &IGrabOptions,
+	) -> std::io::Result<()> {
 		let igrab_file = std::fs::File::create(filename)?;
 		let mut igrab_writer = std::io::BufWriter::new(igrab_file);
-		self.write_igrab_asm_header(&mut igrab_writer, igrab_version)
+		self.write_igrab_asm_header(&mut igrab_writer, igrab_options)
 	}
 
 	fn write_omnispeak_cfg(&self, f: &mut dyn std::io::Write) -> std::io::Result<()> {
@@ -1104,6 +1184,8 @@ fn show_usage() {
 	println!("\t\tCreates a GRAPHEXT/GFXE_EXT assembly (.EQU) header.");
 	println!("\t--igrab-version <0.24 | 0.4>");
 	println!("\t\tEmulate the output from a specific IGRAB version.");
+	println!("\t--igrab-underscore-separator");
+	println!("\t\tAdd an underscore before chunk name suffixes (e.g., _SPR)");
 }
 
 fn main() {
@@ -1118,7 +1200,7 @@ fn main() {
 	let mut arg_iter = args.iter().skip(2);
 
 	/* We default to 0.4 for igrab output. */
-	let mut igrab_version = IGrabVersion::ZeroPointFour;
+	let mut igrab_options = IGrabOptions::default();
 
 	while let Some(arg) = arg_iter.next() {
 		match arg.as_str() {
@@ -1136,19 +1218,23 @@ fn main() {
 			}
 			"--igrab-version" => {
 				let ver_str = arg_iter.next().unwrap().as_str();
-				igrab_version = match ver_str {
+				igrab_options.version = match ver_str {
 					"0.24" => IGrabVersion::ZeroPointTwoFour,
 					"0.4" => IGrabVersion::ZeroPointFour,
 					_ => panic!("Invalid IGRAB version. Only 0.24 and 0.4 are supported!"),
 				};
 			}
+			"--igrab-underscore-separator" => {
+				igrab_options.append_underscores = true;
+			}
 			"--igrab-header" => {
 				let filename = arg_iter.next().unwrap().as_str();
-				headers.save_igrab_header(filename, igrab_version).unwrap();
+				headers.save_igrab_header(filename, &igrab_options).unwrap();
 			}
 			"--igrab-asm" => {
 				let filename = arg_iter.next().unwrap().as_str();
-				headers.save_igrab_asm_header(filename, igrab_version).unwrap();
+				headers.save_igrab_asm_header(filename, &igrab_options)
+					.unwrap();
 			}
 			_ => {
 				show_usage();
