@@ -22,6 +22,7 @@ RUSTC ?= rustc
 
 SOURCES = src/main.rs \
 	  src/binary_io.rs \
+	  src/igrab.rs \
 	  src/parser.rs
 
 idgrab: $(SOURCES)
