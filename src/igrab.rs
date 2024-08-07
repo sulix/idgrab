@@ -22,11 +22,14 @@
 // The tab width used in outputting IGRAB files. Mostly used by 0.24
 const IGRAB_TAB_WIDTH: usize = 8;
 
-#[derive(Default, PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy)]
 pub enum IGrabVersion {
 	ZeroPointTwoFour,
-	#[default]
 	ZeroPointFour,
+}
+
+impl Default for IGrabVersion {
+	fn default() -> IGrabVersion { IGrabVersion::ZeroPointFour }
 }
 
 impl std::fmt::Display for IGrabVersion {
