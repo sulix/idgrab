@@ -45,8 +45,8 @@ Lump "" {
 	"TITLESCREEN"
 }
 Lump "KEENTALK" {
-	"KEENANGRY"
 	"KEENTALK1"
+	"KEENTALK2"
 
 }
 Lump "LOADING" {
