@@ -78,6 +78,18 @@ impl GfxHeaders {
 			+ self.misc_chunks.len() as u32
 	}
 
+	fn bitmaps_header(&self) -> u32 {
+		0
+	}
+
+	fn bitmaps_masked_header(&self) -> u32 {
+		if self.bitmaps.len() > 0 { 1 } else { 0 }
+	}
+
+	fn sprites_header(&self) -> u32 {
+		self.bitmaps_header() + if self.bitmaps_masked.len() > 0 { 1 } else { 0 }
+	}
+
 	fn fonts_start(&self) -> u32 {
 		self.header_chunk_count
 	}
@@ -466,9 +478,15 @@ impl GfxHeaders {
 		writeln!(f, "#define NUMTILE32M   {}", self.tile32_masked_count)?;
 
 		writeln!(f, "//\n// File offsets for data items\n//")?;
-		writeln!(f, "#define STRUCTPIC    0")?;
-		writeln!(f, "#define STRUCTPICM   1")?;
-		writeln!(f, "#define STRUCTSPRITE 2")?;
+		if self.bitmaps.len() > 0 {
+			writeln!(f, "#define STRUCTPIC    {}", self.bitmaps_header())?;
+		}
+		if self.bitmaps_masked.len() > 0 {
+			writeln!(f, "#define STRUCTPICM   {}", self.bitmaps_masked_header())?;
+		}
+		if self.sprites.len() > 0 {
+			writeln!(f, "#define STRUCTSPRITE {}", self.sprites_header())?;
+		}
 		writeln!(f, "")?;
 		writeln!(f, "#define STARTFONT    {}", self.fonts_start())?;
 		writeln!(f, "#define STARTFONTM   {}", self.fonts_masked_start())?;
@@ -583,9 +601,15 @@ impl GfxHeaders {
 		writeln!(f, "NUMTILE32M  \t=\t{}", self.tile32_masked_count)?;
 
 		writeln!(f, ";\n; File offsets for data items\n;")?;
-		writeln!(f, "STRUCTPIC  \t=\t0")?;
-		writeln!(f, "STRUCTPICM  \t=\t1")?;
-		writeln!(f, "STRUCTSPRITE  \t=\t2")?;
+		if self.bitmaps.len() > 0 {
+			writeln!(f, "STRUCTPIC  \t=\t{}", self.bitmaps_header())?;
+		}
+		if self.bitmaps_masked.len() > 0 {
+			writeln!(f, "STRUCTPICM  \t=\t{}", self.bitmaps_masked_header())?;
+		}
+		if self.sprites.len() > 0 {
+			writeln!(f, "STRUCTSPRITE  \t=\t{}", self.sprites_header())?;
+		}
 		writeln!(f, "")?;
 		writeln!(f, "STARTFONT  \t=\t{}", self.fonts_start())?;
 		writeln!(f, "STARTFONTM  \t=\t{}", self.fonts_masked_start())?;
@@ -743,7 +767,6 @@ fn parse_gfx_script(filename: &str) -> std::io::Result<GfxHeaders> {
 	let mut current_lump: Option<Lump> = None;
 
 	let mut headers = GfxHeaders::default();
-	headers.header_chunk_count = 3;
 
 	loop {
 		let entry_type = lexer.next_token();
@@ -844,6 +867,8 @@ fn parse_gfx_script(filename: &str) -> std::io::Result<GfxHeaders> {
 				}
 			}
 			Some(parser::Token::Ident("Bitmaps")) => {
+				// If we have bitmaps, we have a pics header.
+				headers.header_chunk_count += 1;
 				lexer.expect_symbol('{');
 				loop {
 					let bmp_tok = lexer.next_token();
@@ -889,6 +914,7 @@ fn parse_gfx_script(filename: &str) -> std::io::Result<GfxHeaders> {
 				}
 			}
 			Some(parser::Token::Ident("BitmapsMasked")) => {
+				// If we have masked bitmaps, we have a picsm header.
 				lexer.expect_symbol('{');
 				loop {
 					let bmp_tok = lexer.next_token();
@@ -936,6 +962,7 @@ fn parse_gfx_script(filename: &str) -> std::io::Result<GfxHeaders> {
 				}
 			}
 			Some(parser::Token::Ident("Sprites")) => {
+				// If we have sprites, we have a sprites header.
 				lexer.expect_symbol('{');
 				loop {
 					let sprite_tok = lexer.next_token();
