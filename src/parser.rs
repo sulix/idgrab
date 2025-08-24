@@ -97,6 +97,7 @@ impl<'a> Lexer<'a> {
 							}
 							self.eat_char();
 						}
+						return self.next_token();
 					} else if c == '"' {
 						// Start of a string literal.
 						let mut str_val = String::new();
