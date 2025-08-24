@@ -915,6 +915,7 @@ fn parse_gfx_script(filename: &str) -> std::io::Result<GfxHeaders> {
 			}
 			Some(parser::Token::Ident("BitmapsMasked")) => {
 				// If we have masked bitmaps, we have a picsm header.
+				headers.header_chunk_count += 1;
 				lexer.expect_symbol('{');
 				loop {
 					let bmp_tok = lexer.next_token();
@@ -963,6 +964,7 @@ fn parse_gfx_script(filename: &str) -> std::io::Result<GfxHeaders> {
 			}
 			Some(parser::Token::Ident("Sprites")) => {
 				// If we have sprites, we have a sprites header.
+				headers.header_chunk_count += 1;
 				lexer.expect_symbol('{');
 				loop {
 					let sprite_tok = lexer.next_token();
